@@ -1,0 +1,688 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+
+<title>WaveGrid - 4D Wave Generator Simulation through Emergence</title>
+<!-- Code modified from http://rectangleworld.com/blog/archives/587 
+	by Nathaniel D. Gibson-->
+<!-- easeMin/Max hot spots [[0,2.4],[.3,1],[0,1],[.045,.15]]-->
+
+<script src="js/modernizr-2.0.6.js"></script>
+
+<script type="text/javascript">
+
+window.addEventListener("load", windowLoadHandler, false);
+
+window.showEase = false;
+
+//for debug messages
+var Debugger = function() { };
+Debugger.log = function(message) {
+	try {
+		console.log(message);
+	}
+	catch (exception) {
+		return;
+	}
+}
+
+function windowLoadHandler() {
+	canvasApp();
+}
+
+function canvasSupport() {
+	return Modernizr.canvas;
+}
+
+function guidGenerator() {
+    var S4 = function() {
+       return (((1+Math.random())*0x10000)|0).toString(16).substring(1);
+    };
+    return (S4()+S4()+"-"+S4()+"-"+S4()+"-"+S4()+"-"+S4()+S4()+S4());
+}
+
+var paintColor = {r: 0, g: 0, b: 0};
+var paintFloating = false;
+var boidsView = false;
+var chanMode = 0;
+var chans = [1, 1, 1];
+var vectorSum = {r: 0, g: 0, b: 0, e: 0};
+var snapnum = 1;
+var guid = guidGenerator();
+
+function canvasApp() {
+	if (!canvasSupport()) {
+		return;
+	}	
+	
+	var displayCanvas = document.getElementById("displayCanvas");
+	var context = displayCanvas.getContext("2d", {alpha: false});
+	var displayWidth = displayCanvas.width;
+	var displayHeight = displayCanvas.height;
+
+	/*var nodeCanvas = document.getElementById('nodestat');
+	var nodectx = nodeCanvas.getContext('2d', {alpha: false});
+	*/
+	var cellList;
+	var gridWidth;
+	var gridHeight;
+	var cellHeight;
+	var cellWidth;
+	var timer;
+	var cicount = 0;
+	
+	///////////////////////
+	//for speed, defining variables used in update function as global variables.
+	var i;
+	//var showEase = false;
+	var easeClipFriction;
+	var doPaint = false;
+	var paint;
+	var isPressed = false;
+	var pressButton = -1;
+	var doErase = false;
+	var cell;
+	var rAve, gAve, bAve, eAve;
+	var rVelAve, gVelAve, bVelAve, eVelAve;
+	var ease;
+	//var easeEase;
+	var rv,gv,bv,mag;
+	var rAccel, gAccel, bAccel, eAccel;
+	var rSep, gSep, bSep, eSep;	
+	var velMax;
+	var minDist;
+	var easeMinDist;
+	var eeMinDist;
+	var minDistSquare;
+	var easeMinDistSquare;
+	var eeMinDistSquare;
+	var dr, dg, db, de;
+	var neighbor;
+	var neighborPointer;
+	var f;
+	var sepMagRecip;
+	var sepNormMag;
+	var pr, pg, pb, cw;
+	var initRandom = false;
+	var floatMinDist = 256 * 256 * 256;
+	var tStep = 0, lastSin = {x:0, y: 255};
+
+	///////////////////////
+	
+	init();
+	
+	function init() {
+		mode3d = true;
+		gridWidth = 225;
+		gridHeight = 130;
+		gridDepth = 15;
+
+		cellWidth = displayWidth/gridWidth;
+		cellHeight = displayHeight/gridHeight;
+		
+		ease = 0.01;//0.6732;
+		easeEase = 0.8;
+		eeEase = 0.4;
+		easeMax = 1;//0.367; //0.767; //1; //0.99732;
+		easeMin = 0;
+		eeMax = 0.8;
+		eeMin = 0;
+		easeMinDist = 0.15; //0.2;
+		eeMinDist = 0.02;
+		easeClipFriction = 0.1;
+		easeMinDistSquare = easeMinDist*easeMinDist;
+		eeMinDistSquare = eeMinDist*eeMinDist;
+		velMax = 255;
+		minDist = 8;
+		minDistSquare = minDist*minDist;
+		sepNormMag = 4;
+		
+		createCells();
+		
+		//displayCanvas.addEventListener("click", restart, false);
+		displayCanvas.addEventListener("mousedown", function(evt){
+			isPressed = true;
+			pressButton = evt.button;
+			console.log(pressButton);
+			console.log(evt);
+			if (evt.which === 3 || evt.button === 2){ evt.preventDefault();}
+		}, false);
+		displayCanvas.addEventListener("mouseup", function(evt){
+			isPressed = false;
+		}, false);
+		displayCanvas.addEventListener("mousemove", function(evt){
+			if (isPressed){
+				var doEr = (pressButton == 2);
+				paintCell(getMousePos(displayCanvas, evt), doEr);
+			}
+		}, false);
+
+		updateEase();
+		timer = window.setInterval(onTimer, 1000/30);
+	}
+
+	function updateEase(){
+		document.getElementById('easeMax').value = easeMax;
+		document.getElementById('easeMin').value = easeMin;
+	}
+	
+	function getMousePos(canvas, evt){
+		var rect = canvas.getBoundingClientRect();
+		return {
+			x: evt.clientX - rect.left,
+			y: evt.clientY - rect.top
+		};
+	}
+	
+	function paintCell(pos, erase){
+		//if (!color) color = {r: 0, g: 0, b: 0};
+		xCell = Math.floor((pos.x / cellWidth)) * cellWidth;
+		yCell = Math.floor((pos.y / cellHeight)) * cellHeight;
+		if (erase) doErase = true; else doPaint = true;
+		paint = {x: xCell, y: yCell};
+		//console.log(pos.x + " x " + pos.y);
+		//paintIndex = (yCell * gridWidth) + xCell;
+		//console.log(xCell + " x " + yCell);
+		console.log(erase);
+		console.log(paint);
+	}
+	
+	function createCells() {
+		var i,j;
+		var r,g,b,e,ee;
+		var cellArray = [];
+		cellList = {};
+		for (i = 0; i < gridWidth; i++) {
+			cellArray.push([]);
+			for (j = 0; j < gridHeight; j++) {
+				if (initRandom){
+					r = Math.random()*255;
+					g = Math.random()*255;
+					b = Math.random()*255;
+					e = (Math.random()*(easeMax - easeMin)) + easeMin;
+					ee = (Math.random() * (eeMax - eeMin)) + eeMin;
+				}else{
+					r = 127;
+					g = 127;
+					b = 127;
+					e = (easeMax + easeMin) / 2;
+					ee = (eeMax + eeMin) / 2;
+				}
+				//if (j == 0) console.log(e + " " + r + "," + g + "," + b);
+				//r = ((i == 90) && (j > 100 && j < 105)) ? 255: r;
+				/*if (i == 20 && j > 10 && j < 15){
+					r = 255;
+					g = 255;
+					b = 255;
+					doFixed = true;
+				}else if (i == 40 && j > 10 && j < 15){
+					r = 0;
+					g = 0;
+					b = 0;
+					doFixed = true;					
+				}else{
+					doFixed = false;
+				}*/
+				doFixed = false;
+				var newCell = {
+					x: i*displayWidth/gridWidth,
+					y: j*displayHeight/gridHeight,
+					r: r,
+					g: g,
+					b: b,
+					ease: e,
+					ee: ee,
+					bufferR: r,
+					bufferG: g,
+					bufferB: b,
+					bufferEase: e,
+					bufferEE: ee,
+					rVel: 0,
+					gVel: 0,
+					bVel: 0,
+					easeVel: 0,
+					eeVel: 0,
+					bufferRVel: 0,
+					bufferGVel: 0,
+					bufferBVel: 0,
+					bufferEaseVel: 0,
+					bufferEEVel: 0,
+					fixed: doFixed,
+					neighbors: [],
+					neighborPointerList: {}
+				}
+				
+				//set neighbors
+				if (i > 0) {
+					newCell.neighbors.push(cellArray[i-1][j]);
+					cellArray[i-1][j].neighbors.push(newCell);
+				}
+				if (j > 0) {
+					newCell.neighbors.push(cellArray[i][j-1]);
+					cellArray[i][j-1].neighbors.push(newCell);
+				}
+				//Loop the grid (as if it were embedded on a sphere)
+				if (i == gridWidth - 1){
+					newCell.neighbors.push(cellArray[0][j]);
+					cellArray[0][j].neighbors.push(newCell);
+				}
+				if (j == gridHeight - 1){
+					newCell.neighbors.push(cellArray[i][0]);
+					cellArray[i][0].neighbors.push(newCell);
+				}
+				
+				//store cells in a 2D array only for the sake of setting neighbors
+				cellArray[i].push(newCell);
+				
+				//store cells in a more efficient linked list, for use in update loop
+				if ((i == 0) && (j == 0)) {
+					cellList.first = newCell;	
+				}
+				else {
+					newCell.next = cellList.first;
+					cellList.first = newCell;
+				}
+			}
+		}
+		
+		//convert neighbor arrays to linked lists - linked list just has pointer objects.
+		var cell = cellList.first;
+		var numNeighbors;
+		while (cell != null) {
+			numNeighbors = 1;
+			cell.neighborPointerList.first = {};
+			cell.neighborPointerList.first.neighbor = cell.neighbors[0];
+			for (i = 1; i < cell.neighbors.length; i++) {
+				var newPointer = {};
+				newPointer.next = cell.neighborPointerList.first;
+				cell.neighborPointerList.first = newPointer;
+				newPointer.neighbor = cell.neighbors[i];
+				++numNeighbors;
+			}
+			cell.numNeighbors = numNeighbors;
+			cell = cell.next;
+		}
+	}
+	
+	function restart(evt) {
+		cell = cellList.first;
+		while (cell != null) {
+			if (cell.fixed){
+				cell = cell.next;
+				continue;
+			}
+			cell.bufferR = cell.r = Math.random()*255;
+			cell.bufferG = cell.g = Math.random()*255;
+			cell.bufferB = cell.b = Math.random()*255;
+			cell.bufferEase = cell.ease = (Math.random()*(easeMax - easeMin)) + easeMin;
+			cell.bufferEE = cell.ee = (Math.random()*(eeMax - eeMin)) + eeMin;
+			cell.bufferRVel = cell.rVel = 0;
+			cell.bufferGVel = cell.gVel = 0;
+			cell.bufferBVel = cell.bVel = 0;
+			cell.bufferEaseVel = cell.easeVel = 0;
+			cell.bufferEEVel = cell.eeVel = 0;
+			//cell.fixed = false;
+			cell = cell.next;	
+		}
+	}
+	
+	function onTimer(evt) {
+		tStep++;
+		cell = cellList.first;
+		while (cell != null) {
+			var rAve = 0,
+			gAve = 0,
+			bAve = 0,
+			eAve = 0,
+			eeAve = 0,
+			rVelAve = 0,
+			gVelAve = 0,
+			bVelAve = 0,
+			eVelAve = 0,
+			eeVelAve = 0,
+			rSep = 0,
+			gSep = 0,
+			bSep = 0,
+			eSep = 0,
+			eeSep = 0;
+			if (cell.fixed == false){
+				//cell = cell.next;
+				//continue;
+				neighborPointer = cell.neighborPointerList.first;
+				while (neighborPointer != null) {
+					neighbor = neighborPointer.neighbor;
+					rAve += neighbor.r;
+					gAve += neighbor.g;
+					bAve += neighbor.b;
+					eAve += neighbor.ease;
+					eeAve += neighbor.ee;
+					rVelAve += neighbor.rVel;
+					gVelAve += neighbor.gVel;
+					bVelAve += neighbor.bVel;
+					eVelAve += neighbor.easeVel;
+					eeVelAve += neighbor.eeVel;
+					var dr = cell.r - neighbor.r,
+					dg = cell.g - neighbor.g,
+					db = cell.b - neighbor.b,
+					de = cell.ease - neighbor.ease,
+					dee = cell.ee - neighbor.ee;
+					if (dr*dr + dg*dg + db*db < minDistSquare) {
+						rSep += dr;
+						gSep += dg;
+						bSep += db;
+					}
+					if (de*de < easeMinDistSquare){
+						eSep += de;
+					}
+					if (dee*dee < eeMinDistSquare){
+						eeSep += dee;
+					}
+					neighborPointer = neighborPointer.next;
+				}
+
+				rAve *= (f = 1/cell.numNeighbors);
+				gAve *= f;
+				bAve *= f;
+				eAve *= f;
+				eeAve *= f;
+				rVelAve *= f;
+				gVelAve *= f;
+				bVelAve *= f;
+				eVelAve *= f;
+				eeVelAve *= f;
+
+				//normalize separation vector
+				if ((rSep != 0) || (gSep != 0) || (bSep != 0)) {
+					rSep *= (sepMagRecip = sepNormMag/Math.sqrt(rSep*rSep + gSep*gSep + bSep*bSep));
+					gSep *= sepMagRecip;
+					bSep *= sepMagRecip;
+					//eSep *= (eSep;
+				}
+				
+				//Update velocity by combining separation, alignment and cohesion effects. Change velocity only by 'ease' ratio. 
+				cell.bufferRVel += cell.ease*(rSep + rVelAve + rAve - cell.r - cell.bufferRVel);
+				cell.bufferGVel += cell.ease*(gSep + gVelAve + gAve - cell.g - cell.bufferGVel);
+				cell.bufferBVel += cell.ease*(bSep + bVelAve + bAve - cell.b - cell.bufferBVel);
+				cell.bufferEaseVel += /*cell.ee*/easeEase *(eSep + eVelAve + eAve - cell.ease - cell.bufferEaseVel);
+				cell.bufferEEVel += eeEase * (eeSep + eeVelAve + eeAve - cell.ee - cell.bufferEEVel);
+				/*cicount++;
+				if (cicount < 6){
+					console.log((de*de) + " ... " + easeMinDistSquare);
+					console.log(easeEase + "\r\n" + eSep + " + " + eVelAve + " + " + eAve + " - " + cell.ease + " - " + cell.bufferEaseVel + "\r\n" + cell.bufferEaseVel);
+				}*/
+				
+				//Code for clamping velocity commented out because in my testing, the velocity never went over the max. (But you may wish to restore this
+				//code if you experiment with different parameters.)
+				/*
+				if ((mag = Math.sqrt(cell.bufferRVel*cell.bufferRVel + cell.bufferGVel*cell.bufferGVel + cell.bufferBVel*cell.bufferBVel))> velMax) {
+					cell.bufferRVel *= (f = velMax/mag);
+					cell.bufferGVel *= f;
+					cell.bufferBVel *= f;
+					Debugger.log("clamped");
+				}
+				*/
+				
+				//update colors according to color velocities
+				cell.bufferR += cell.bufferRVel;
+				cell.bufferG += cell.bufferGVel;
+				cell.bufferB += cell.bufferBVel;
+				cell.bufferEase += cell.bufferEaseVel;
+				cell.bufferEE += cell.bufferEEVel;
+				
+				//bounce colors off of color cube boundaries
+				if (cell.bufferR < 0) {
+					cell.bufferR = 0;
+					cell.bufferRVel *= -easeClipFriction;
+				}
+				else if (cell.bufferR > 255) {
+					cell.bufferR = 255;
+					cell.bufferRVel *= -easeClipFriction;
+				}
+				if (cell.bufferG < 0) {
+					cell.bufferG = 0;
+					cell.bufferGVel *= -easeClipFriction;
+				}
+				else if (cell.bufferG > 255) {
+					cell.bufferG = 255;
+					cell.bufferGVel *= -easeClipFriction;
+				}
+				if (cell.bufferB < 0) {
+					cell.bufferB = 0;
+					cell.bufferBVel *= -easeClipFriction;
+				}
+				else if (cell.bufferB > 255) {
+					cell.bufferB = 255;
+					cell.bufferBVel *= -easeClipFriction;
+				}
+				if (cell.bufferEase < easeMin){
+					cell.bufferEase = easeMin;
+					cell.bufferEaseVel *= -easeClipFriction;
+				}else if (cell.bufferEase > easeMax){
+					cell.bufferEase = easeMax;
+					cell.bufferEaseVel *= -easeClipFriction;
+				}
+				if (cell.bufferEE < eeMin){
+					cell.bufferEE = eeMin;
+					cell.bufferEEVel *= -easeClipFriction;
+				}
+			}else{ //For standing wave cells (fixed point)
+				if (cell.floating == true){
+					neighborPointer = cell.neighborPointerList.first;
+					var dmin = -1;
+					var floater = null;
+					while (neighborPointer != null) {
+						neighbor = neighborPointer.neighbor;
+						dr = cell.r - neighbor.r;
+						dg = cell.g - neighbor.g;
+						db = cell.b - neighbor.b;
+						var dn = Math.abs(dr * dg * db);
+						if (dn < dmin || dmin == -1){
+							floater = neighbor;
+							dmin = dn;
+						}
+						neighborPointer = neighborPointer.next;
+					}
+					if (floater != null){
+						floater.fixed = true;
+						cell.fixed = false;
+						cell.floating = false;
+						floater.floating = true;
+						floater.bufferR = cell.bufferR;
+						floater.bufferG = cell.bufferG;
+						floater.bufferB = cell.bufferB;
+						floater.rVel = 0;
+						floater.gVel = 0;
+						floater.bVel = 0;
+						floater.bufferEaseVel = 0.00001;
+						floater.bufferEase = 0;
+						cell.bufferEase = 4;
+					}
+				}
+			}
+			if (doPaint == true){
+				//console.log(cell.x + " x " + cell.y);
+				if (cell.x == paint.x && cell.y == paint.y){
+					cell.fixed = true;
+					cell.floating = paintFloating;
+					cell.bufferR = paintColor.r;
+					cell.bufferG = paintColor.g;
+					cell.bufferB = paintColor.b;
+					cell.rVel = 0;
+					cell.gVel = 0;
+					cell.bVel = 0;
+					cell.bufferEaseVel = 0.00001;
+					cell.bufferEase = 0;
+					cell.bufferEEVel = 0;
+					cell.bufferEE = 0;
+					doPaint = false;
+				}
+			}
+			if (doErase == true){
+				if (cell.x == paint.x && cell.y == paint.y){
+					cell.fixed = false;
+					cell.floating = false;
+					cell.bufferEase = 4;
+					doErase = false;
+				}
+			}
+
+			cell = cell.next;
+		}
+
+		//now loop through again, copy buffer values and draw
+		cell = cellList.first;
+		/*
+		nodectx.strokeStyle = "rgb(0,255,0)";
+		var nwy = Math.floor(255 - cell.r), nwx = tStep % 900;
+		if (nwx <= 1){
+			nodectx.fillStyle = "rgb(0,0,0)";
+			nodectx.fillRect(0,0,900,540);
+			lastSin = {x: 0, y: 255};
+		}
+		nodectx.moveTo(lastSin.x, lastSin.y);
+		nodectx.lineTo(nwx, nwy);
+		nodectx.stroke();
+		lastSin = {x: nwx, y: nwy};
+		*/
+		cCount = 0;
+		var dc = false;
+		if (boidsView){
+			context.fillStyle = "rgb(0, 0, 0)";
+			context.fillRect(0, 0, 900, 540);
+		}
+		vectorSum = {r: 0, g: 0, b: 0, e: 0, ee: 0};
+		while (cell != null) {
+			cell.r = cell.bufferR;
+			cell.g = cell.bufferG;
+			cell.b = cell.bufferB;
+			cell.ease = cell.bufferEase;
+			cell.ee = cell.bufferEE;
+
+			cell.rVel = cell.bufferRVel;
+			cell.gVel = cell.bufferGVel;
+			cell.bVel = cell.bufferBVel;
+			cell.easeVel = cell.bufferEaseVel;
+			cell.eeVel = cell.bufferEEVel;
+
+			vectorSum.r += cell.rVel;
+			vectorSum.g += cell.gVel;
+			vectorSum.b += cell.bVel;
+			vectorSum.e += cell.easeVel;
+			vectorSum.ee += cell.eeVel;
+			//if (vectorSum.e != 0) console.log(vectorSum);
+
+			//The following line is a substitute which shows low ease areas as black
+			if (window.showEase){
+				context.fillStyle = "rgb(" + ~~(cell.r * cell.ease) + "," + ~~(cell.g * cell.ease) + "," + ~~(cell.b * cell.ease) +")";
+			}else{
+				/*pr = ~~(cell.r / 64) * 64;
+				pg = ~~(cell.g / 64) * 64;
+				pb = ~~(cell.b / 64) * 64;
+				*/
+				pr = cell.r;
+				pg = cell.g;
+				pb = cell.b;
+				//pg = 0;
+				//pb = 0;
+				context.fillStyle = "rgb(" + ~~pr + "," + ~~pg + "," + ~~pb +")";
+			}
+			
+			if (boidsView){
+				cw = ~~((pb / 255) * 20) + 1;
+				var x3 = ~~((pr / 255) * 900), y3 = ~~((pg / 255) * 540)
+				//context.moveTo(x3, y3);
+				//context.lineTo(x3, y3);
+				//context.stroke();
+				context.fillRect(x3, y3, cw, cw);
+			}else{
+				context.fillRect(cell.x, cell.y, cellWidth, cellHeight);
+			}
+			
+			cell = cell.next;
+			//cCount++;
+		}
+	}		
+}
+
+</script>
+
+<style type="text/css">
+	body {background-color:#000000; color:#555555;} 
+	h4 {font-family: sans-serif; color:#555555; font-size:16px;}
+	h3 {font-family: sans-serif; color:#555555;}
+	p {font-family: sans-serif; color:#555555; font-size:14px;}
+		#caption {position:absolute; width:900px; text-align:center; top:545px; z-index:1}
+	a {font-family: sans-serif; color:#d15423; text-decoration:none;}
+	canvas {}
+		#displayCanvas {position:absolute; top:10px; z-index:0;}
+	div {}
+		#container {width:900px; height:540px; margin:auto;}
+	.splotch {
+		width:1.618em;
+		height:1em;
+		border: 1px solid #AAAAAA;
+	}
+</style>
+
+<script type="text/javascript">
+	function getSnapshot(){
+		var sn = document.getElementById('snapshot');
+	  	var cv = document.getElementById('displayCanvas');
+	  	sn.setAttribute('download', 'WaveGrid-' + guid + '-' + snapnum + '_' + easeMax + '.png');
+	  	snapnum++;
+	  	cv.toDataURL("image/png").replace("image/png", "image/octet-stream");
+	}
+</script>
+
+</head>
+<body>
+<div id="container"> 
+    <canvas id="displayCanvas" width="900px" height="540px" oncontextmenu="return false;">
+        Your browser does not support HTML5 canvas.
+    </canvas>
+    <div align="center" style="position:absolute; top: 550px; width: 900px">
+    	<a href="#s" onclick="getSnapshot();" id="snapshot">Snapshot</a> | 
+    	<a href="#b" onclick="boidsView=!boidsView;">3D View</a> &nbsp;| &nbsp;
+    	Ease Max: <input id="easeMax" type="text" style="width:40px" onchange="easeMax=parseFloat(this.value);" size="8"> 
+		Min: <input id="easeMin" type="text" style="width:40px" onchange="easeMin=parseFloat(this.value);" size="8"> 
+    	<a href="#a" onclick="window.showEase = !window.showEase;">Show</a> &nbsp;| &nbsp;
+    	<!--<input type="checkbox" onclick="paintFloating=!paintFloating;"> Floating-->
+    	<a href="#a" class="splotch" onclick="paintColor={r:0,g:0,b:0};" style="background-color: rgb(0,0,0);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:255,g:255,b:255};" style="background-color: rgb(255,255,255);">&nbsp; &nbsp;</a> 
+
+    	<!-- Group 1 Elementary Colors: Primary -->
+    	<a href="#a" class="splotch" onclick="paintColor={r:255,g:0,b:0};" style="background-color: rgb(255,0,0);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:0,g:255,b:0};" style="background-color: rgb(0,255,0);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:0,g:0,b:255};" style="background-color: rgb(0,0,255);">&nbsp; &nbsp;</a> 
+    	<!-- Group 1 Secondary Elementary Colors -->
+    	<a href="#a" class="splotch" onclick="paintColor={r:0,g:255,b:255};" style="background-color: rgb(0,255,255);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:255,g:0,b:255};" style="background-color: rgb(255,0,255);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:255,g:255,b:0};" style="background-color: rgb(255,255,0);">&nbsp; &nbsp;</a> 
+
+    	<!-- Group 2 Secondary Muted Colors: Generators of Group 3 -->
+    	<a href="#a" class="splotch" onclick="paintColor={r:0,g:255,b:127};" style="background-color: rgb(0,255,127);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:255,g:0,b:127};" style="background-color: rgb(255,0,127);">&nbsp; &nbsp;</a> 
+    	<a href="#a" class="splotch" onclick="paintColor={r:0,g:127,b:255};" style="background-color: rgb(0,127,255);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:255,g:127,b:0};" style="background-color: rgb(255,127,0);">&nbsp; &nbsp;</a> 
+    	<a href="#a" class="splotch" onclick="paintColor={r:127,g:0,b:255};" style="background-color: rgb(127,0,255);">&nbsp; &nbsp;</a>
+    	<a href="#a" class="splotch" onclick="paintColor={r:127,g:255,b:0};" style="background-color: rgb(127,255,0);">&nbsp; &nbsp;</a> 
+
+    	<!-- Group 3 Generated from Group 2 in quaternary reflection but do not generate Group 2 colors -->
+		<a href="#a" class="splotch" onclick="paintColor={r:0,g:0,b:127};" style="background-color: rgb(0,0,127);">&nbsp; &nbsp;</a>
+		<a href="#a" class="splotch" onclick="paintColor={r:255,g:255,b:127};" style="background-color: rgb(255,255,127);">&nbsp; &nbsp;</a> 
+		<a href="#a" class="splotch" onclick="paintColor={r:0,g:127,b:0};" style="background-color: rgb(0,127,0);">&nbsp; &nbsp;</a>
+		<a href="#a" class="splotch" onclick="paintColor={r:255,g:127,b:255};" style="background-color: rgb(255,127,255);">&nbsp; &nbsp;</a> 
+		<a href="#a" class="splotch" onclick="paintColor={r:127,g:0,b:0};" style="background-color: rgb(127,0,0);">&nbsp; &nbsp;</a>
+		<a href="#a" class="splotch" onclick="paintColor={r:127,g:255,b:255};" style="background-color: rgb(127,255,255);">&nbsp; &nbsp;</a> 
+    </div>
+</div>
+<!--<div align="center">
+    <canvas id="nodestat" width="900px" height="255px" style="border: 1px solid #fff" oncontextmenu="return false;">
+    		
+    </canvas>
+</div>-->
+</body>
+</html>
