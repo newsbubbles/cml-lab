@@ -116,8 +116,8 @@ function canvasApp() {
 	
 	function init() {
 		mode3d = true;
-		gridWidth = 225;
-		gridHeight = 130;
+		gridWidth = 120;
+		gridHeight = 60;
 		gridDepth = 15;
 
 		cellWidth = displayWidth/gridWidth;
@@ -629,11 +629,17 @@ function canvasApp() {
 
 <script type="text/javascript">
 	function getSnapshot(){
-		var sn = document.getElementById('snapshot');
+		//var sn = document.getElementById('snapshot');
 	  	var cv = document.getElementById('displayCanvas');
-	  	sn.setAttribute('download', 'WaveGrid-' + guid + '-' + snapnum + '_' + easeMax + '.png');
+	  	//sn.setAttribute('download', 'WaveGrid-' + guid + '-' + snapnum + '_' + easeMax + '.png');
 	  	snapnum++;
-	  	cv.toDataURL("image/png").replace("image/png", "image/octet-stream");
+	  	var img = new Image();
+	  	img.src = cv.toDataURL("image/png");
+	  	img.alt = 'WaveGrid snapshot ' + snapnum;
+	  	img.width = 90;
+	  	img.height - 54;
+	  	var cont = document.getElementById('screenshots');
+	  	cont.appendChild(img);
 	}
 </script>
 
@@ -684,5 +690,8 @@ function canvasApp() {
     		
     </canvas>
 </div>-->
+<div id="screenshots" align="center" style="position:relative;top:40px">
+
+</div>
 </body>
 </html>
