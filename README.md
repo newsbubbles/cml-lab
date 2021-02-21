@@ -2,7 +2,7 @@
 
 Online Demo: http://webdombot.com/automat/
 
-This is a javascript implementation of a CML which uses color (R,G,B) as the primary parameter space.  The rule-set for cell interaction is based on the thre rule Boids algorithm, with a Von Neumann neighborhood as the coupling scheme.  Cells are laid out in 2D space as a continuous grid representing the coupling structure.  The main difference between this and other CMLs is that the coupling strength between cells is also a parameter used as an exponent for vector multiplication in the color space, causing a dynamic coupling which can be between the "ease max" and "min"
+This is a javascript implementation of a CML which uses color (R,G,B) as the primary parameter space.  The rule-set for cell interaction is based on the three rule Boids algorithm, with a Von Neumann neighborhood as the coupling scheme.  Cells are laid out in 2D space as a continuous grid representing the coupling structure.  The main difference between this and other CMLs is that the coupling strength between cells is also a parameter used as an exponent for vector multiplication in the color space, causing a dynamic coupling which can be between the "ease max" and "min"
 
 Currently this works in Firefox only.
 
